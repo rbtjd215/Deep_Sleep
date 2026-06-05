@@ -1,9 +1,10 @@
-# Deep Sleep app
+# Deep_Sleep_app
 
 본 프로젝트는 수면 유도를 위한 4-7-8 호흡 가이드 및 수면 사운드를 제공하는 웹 애플리케이션이다. 
 시중에 출시된 유료 수면 앱의 무분별한 결제 유도 및 구독 시스템에 불편함을 느껴, 순수 웹 기술만으로 백그라운드 재생이 완벽히 지원되는 무료 앱을 직접 개발하였다.
 
-**Live Demo**: [https://rbtjd215.github.io/Deep_Sleep/](https://rbtjd215.github.io/Deep_Sleep/)
+[수면 앱 바로 가기](https://rbtjd215.github.io/Deep_Sleep/)  
+[수면 앱 가이드 보기](GUIDE.md)
 
 ---
 
@@ -143,14 +144,6 @@ silentAudio.play();
 
 ---
 
-## 4. 사용자 가이드 (User Guide)
-
-앱의 실행 방법(Android/iOS 설치 방법 포함), 4-7-8 호흡법 진행 절차 및 수면 사운드의 효과 등 일반 사용자를 위한 상세 안내는 아래 문서를 참조한다.
-
-**[사용자 가이드(GUIDE.md) 보러 가기](GUIDE.md)**
-
----
-
-## 5. License
+## 4. License
 
 본 프로젝트는 MIT 라이선스 하에 배포된다. 자세한 내용은 `LICENSE` 파일을 참조한다.
