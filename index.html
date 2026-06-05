@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Deep Sleep - 수면 가이드</title>
+    <meta name="description" content="4-7-8 호흡법과 수면 비트로 깊은 잠으로 안내하는 수면 가이드">
+    <meta name="theme-color" content="#080c1f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="stylesheet" href="style.css?v=2">
+</head>
+<body>
+
+    <main class="app">
+
+        <!-- ═══ 대기 화면 ═══ -->
+        <section id="idle-view" class="view active">
+            <h1 class="app-title">Deep Sleep</h1>
+            <p class="app-subtitle">4-7-8 호흡과 수면 사운드가<br>깊은 잠으로 안내합니다</p>
+
+            <div class="orb-container orb-sm">
+                <div class="idle-orb"></div>
+            </div>
+
+            <p class="section-label">수면 사운드</p>
+            <div class="beat-options" id="beat-options">
+                <button class="beat-chip" data-beat="delta1">
+                    <span class="chip-icon">🌊</span>
+                    <span class="chip-text">
+                        <span class="chip-name">델타 1Hz</span>
+                        <span class="chip-desc">깊은 수면</span>
+                    </span>
+                </button>
+                <button class="beat-chip active" data-beat="delta3">
+                    <span class="chip-icon">🌙</span>
+                    <span class="chip-text">
+                        <span class="chip-name">델타 3Hz</span>
+                        <span class="chip-desc">수면 유도</span>
+                    </span>
+                </button>
+                <button class="beat-chip" data-beat="theta6">
+                    <span class="chip-icon">💭</span>
+                    <span class="chip-text">
+                        <span class="chip-name">세타 6Hz</span>
+                        <span class="chip-desc">깊은 이완</span>
+                    </span>
+                </button>
+                <button class="beat-chip" data-beat="pink">
+                    <span class="chip-icon">🌧️</span>
+                    <span class="chip-text">
+                        <span class="chip-name">핑크 노이즈</span>
+                        <span class="chip-desc">빗소리</span>
+                    </span>
+                </button>
+                <button class="beat-chip" data-beat="brown">
+                    <span class="chip-icon">🌫️</span>
+                    <span class="chip-text">
+                        <span class="chip-name">브라운 노이즈</span>
+                        <span class="chip-desc">깊은 울림</span>
+                    </span>
+                </button>
+            </div>
+
+            <p class="section-label">호흡 횟수</p>
+            <div class="cycle-options" id="cycle-options">
+                <button class="cycle-chip active" data-cycles="4">4회 · 초보 (~1분)</button>
+                <button class="cycle-chip" data-cycles="8">8회 · 숙련 (~2분)</button>
+            </div>
+
+            <p class="section-label">수면 사운드 볼륨</p>
+            <div class="volume-slider-container">
+                <span class="vol-icon" id="vol-icon-left">🔉</span>
+                <input type="range" id="volume-slider" class="volume-slider" min="1" max="100" value="50">
+                <span class="vol-icon">🔊</span>
+            </div>
+
+            <button id="start-btn" class="btn-start">
+                <span>🌙</span> 수면 모드 시작
+            </button>
+
+            <p class="hint" id="hint">🎧 이 사운드는 이어폰 착용이 필수입니다</p>
+        </section>
+
+        <!-- ═══ 호흡 가이드 화면 ═══ -->
+        <section id="breathing-view" class="view">
+            <p class="cycle-label" id="cycle-label">1 / 4 사이클</p>
+
+            <div class="orb-container">
+                <div class="breath-orb" id="breath-orb">
+                    <span class="breath-label" id="breath-label">준비</span>
+                </div>
+            </div>
+
+            <div class="countdown" id="countdown"></div>
+
+            <!-- 호흡 화면 볼륨 조절 -->
+            <div class="volume-slider-container sleep-volume">
+                <span class="vol-icon" id="breath-vol-icon-left">🔉</span>
+                <input type="range" id="breath-volume-slider" class="volume-slider" min="1" max="100" value="50">
+                <span class="vol-icon">🔊</span>
+            </div>
+
+            <button id="stop-breath-btn" class="btn-stop">종료</button>
+        </section>
+
+        <!-- ═══ 수면 비트 화면 ═══ -->
+        <section id="sleepbeat-view" class="view">
+            <div class="sleep-moon">🌙</div>
+            <h2 class="sleep-title">수면 사운드 재생 중</h2>
+            <p class="sleep-desc" id="sleep-beat-name"></p>
+
+            <div class="wave-container">
+                <div class="sleep-wave"></div>
+                <div class="sleep-wave w-delay-1"></div>
+                <div class="sleep-wave w-delay-2"></div>
+            </div>
+
+            <div class="remaining-block">
+                <span class="remaining-value" id="time-remaining">30:00</span>
+                <span class="remaining-unit">남음</span>
+            </div>
+
+            <!-- 수면 화면 볼륨 조절 -->
+            <div class="volume-slider-container sleep-volume">
+                <span class="vol-icon" id="sleep-vol-icon-left">🔉</span>
+                <input type="range" id="sleep-volume-slider" class="volume-slider" min="1" max="100" value="50">
+                <span class="vol-icon">🔊</span>
+            </div>
+
+            <p class="sleep-lock-hint">이어폰을 꼽고 화면을 꺼도 재생됩니다</p>
+
+            <button id="stop-sleep-btn" class="btn-stop">종료</button>
+        </section>
+
+    </main>
+
+    <script src="app.js?v=2"></script>
+</body>
+</html>

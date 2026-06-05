@@ -1,0 +1,557 @@
+/* ════════════════════════════════════════════════
+   Deep Sleep - 수면 가이드 앱 스타일
+   ════════════════════════════════════════════════ */
+
+:root {
+    --bg-top:     #0a0e27;
+    --bg-mid:     #111640;
+    --bg-bottom:  #080c1f;
+    --text-main:  #e0e6ed;
+    --text-dim:   #5a6a7e;
+    --accent:     rgba(100, 149, 237, 1);
+    --accent-glow:rgba(100, 149, 237, 0.25);
+    --purple-glow:rgba(147, 112, 219, 0.35);
+    --green-glow: rgba(60, 179, 113, 0.25);
+}
+
+/* ── 리셋 ── */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    background-color: var(--bg-bottom);  /* 하단 흰색 바 방지 */
+    height: 100%;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+                 'Malgun Gothic', 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    color: var(--text-main);
+    background: linear-gradient(
+        180deg,
+        var(--bg-top) 0%,
+        var(--bg-mid) 45%,
+        #0f1238 70%,
+        var(--bg-bottom) 100%
+    );
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: hidden;
+}
+
+/* ════════════════════════
+   앱 레이아웃
+   ════════════════════════ */
+.app {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ── 뷰 전환 ── */
+.view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+    padding-top: calc(40px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+}
+
+.view.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ════════════════════════
+   대기 화면 (Idle)
+   ════════════════════════ */
+.app-title {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #e0e6ed 30%, #7b8fa8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+}
+
+.app-subtitle {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 8px;
+}
+
+/* ── 대기 원형 (작은 버전) ── */
+.orb-container {
+    width: 280px;
+    height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.orb-sm {
+    width: 120px;
+    height: 120px;
+}
+
+.idle-orb {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(100,149,237,0.2) 0%, rgba(100,149,237,0.02) 70%);
+    border: 1px solid rgba(100,149,237,0.18);
+    box-shadow: 0 0 30px rgba(100,149,237,0.12);
+    animation: idle-pulse 5s ease-in-out infinite;
+}
+
+@keyframes idle-pulse {
+    0%, 100% { transform: scale(1);    opacity: 0.5; }
+    50%      { transform: scale(1.12); opacity: 1;   }
+}
+
+/* ── 사운드 선택 ── */
+.section-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+}
+
+.beat-options {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    max-width: 340px;
+    margin-bottom: 20px;
+}
+
+.beat-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 22px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.beat-chip:active {
+    transform: scale(0.96);
+}
+
+.beat-chip.active {
+    border-color: rgba(100,149,237,0.4);
+    background: rgba(100,149,237,0.1);
+    color: var(--text-main);
+    box-shadow: 0 0 16px rgba(100,149,237,0.1);
+}
+
+.beat-chip.playing .chip-icon::after {
+    content: '';
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(100,149,237,0.9);
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: preview-dot 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes preview-dot {
+    0%   { opacity: 0.3; transform: scale(0.8); }
+    100% { opacity: 1;   transform: scale(1.3); }
+}
+
+.chip-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.chip-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+}
+
+.chip-name {
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.2;
+}
+
+.chip-desc {
+    font-size: 10px;
+    opacity: 0.6;
+    line-height: 1.2;
+}
+
+/* ── 호흡 횟수 선택 ── */
+.cycle-options {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.cycle-chip {
+    padding: 9px 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.cycle-chip:active {
+    transform: scale(0.96);
+}
+
+.cycle-chip.active {
+    border-color: rgba(100,149,237,0.4);
+    background: rgba(100,149,237,0.1);
+    color: var(--text-main);
+    box-shadow: 0 0 12px rgba(100,149,237,0.08);
+}
+
+/* ── 볼륨 슬라이더 ── */
+.volume-slider-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 80%;
+    max-width: 300px;
+    margin: 0 auto 24px;
+}
+
+.vol-icon {
+    font-size: 16px;
+    opacity: 0.6;
+    flex-shrink: 0;
+}
+
+.volume-slider {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: transparent;
+    border-radius: 2px;
+    outline: none;
+    border: none;
+    position: relative;
+    z-index: 0;
+    touch-action: none;
+    will-change: contents;
+    contain: layout style;
+}
+
+/* Webkit Track (Chrome, Safari, Edge) */
+.volume-slider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    border: none;
+    cursor: pointer;
+}
+
+/* Webkit Thumb */
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--text-main);
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(255,255,255,0.3);
+    border: none;
+    margin-top: -8px;
+    position: relative;
+    z-index: 1;
+    will-change: transform;
+    transform: translateZ(0);
+}
+
+/* Firefox Track */
+.volume-slider::-moz-range-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    border: none;
+    cursor: pointer;
+}
+
+/* Firefox Thumb */
+.volume-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--text-main);
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(255,255,255,0.3);
+    border: none;
+    will-change: transform;
+    transform: translateZ(0);
+}
+
+/* 수면 화면 볼륨 슬라이더 — 더 절제된 스타일 */
+.sleep-volume {
+    margin-top: 4px;
+    margin-bottom: 12px;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+.sleep-volume:hover,
+.sleep-volume:active {
+    opacity: 1;
+}
+
+/* ── 시작 버튼 ── */
+.btn-start {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 36px;
+    border-radius: 40px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: #fff;
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    outline: none;
+}
+
+.btn-start:active {
+    transform: scale(0.96);
+    background: rgba(255,255,255,0.12);
+}
+
+.hint {
+    margin-top: 18px;
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.6;
+    transition: opacity 0.3s ease;
+}
+
+/* ════════════════════════
+   호흡 가이드 화면
+   ════════════════════════ */
+.cycle-label {
+    font-size: 14px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+}
+
+/* ── 호흡 원형 ── */
+.breath-orb {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(100,149,237,0.15);
+    border: 1.5px solid rgba(100,149,237,0.3);
+    box-shadow: 0 0 30px var(--accent-glow);
+    transform: scale(1);
+    will-change: transform;
+    transition: transform 4s ease-in-out,
+                background 0.6s ease,
+                border-color 0.6s ease,
+                box-shadow 0.8s ease;
+}
+
+.breath-orb.inhale {
+    transform: scale(2.1);
+    background: rgba(147,112,219,0.25);
+    border-color: rgba(147,112,219,0.45);
+    box-shadow: 0 0 60px var(--purple-glow), 0 0 120px rgba(147,112,219,0.1);
+}
+
+.breath-orb.hold {
+    transform: scale(2.1);
+    background: rgba(100,149,237,0.18);
+    border-color: rgba(100,149,237,0.35);
+    box-shadow: 0 0 40px var(--accent-glow), 0 0 80px rgba(100,149,237,0.08);
+}
+
+.breath-orb.exhale {
+    transform: scale(1);
+    background: rgba(60,179,113,0.15);
+    border-color: rgba(60,179,113,0.35);
+    box-shadow: 0 0 30px var(--green-glow);
+}
+
+.breath-label {
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.9);
+    text-shadow: 0 1px 8px rgba(0,0,0,0.4);
+    z-index: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    padding: 0 8px;
+}
+
+/* ── 카운트다운 ── */
+.countdown {
+    font-size: 56px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.85);
+    min-height: 72px;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.3);
+    margin-top: 4px;
+}
+
+/* ════════════════════════
+   수면 비트 화면
+   ════════════════════════ */
+.sleep-moon {
+    font-size: 44px;
+    margin-bottom: 14px;
+    animation: moon-float 6s ease-in-out infinite;
+}
+
+@keyframes moon-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+}
+
+.sleep-title {
+    font-size: 21px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.sleep-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+/* ── 파도 애니메이션 ── */
+.wave-container {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 24px 0;
+}
+
+.sleep-wave {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 1px solid rgba(100,149,237,0.3);
+    animation: wave-expand 3.5s ease-out infinite;
+}
+
+.w-delay-1 { animation-delay: 1.2s; }
+.w-delay-2 { animation-delay: 2.4s; }
+
+@keyframes wave-expand {
+    0%   { transform: scale(1);   opacity: 0.5; }
+    100% { transform: scale(3.5); opacity: 0;   }
+}
+
+/* ── 남은 시간 ── */
+.remaining-block {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.remaining-value {
+    font-size: 46px;
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255,255,255,0.85);
+}
+
+.remaining-unit {
+    font-size: 15px;
+    color: var(--text-dim);
+}
+
+.sleep-lock-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.5;
+    margin-bottom: 24px;
+}
+
+/* ════════════════════════
+   종료 버튼 (공용)
+   ════════════════════════ */
+.btn-stop {
+    padding: 12px 28px;
+    border-radius: 30px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-dim);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    outline: none;
+}
+
+.btn-stop:active {
+    background: rgba(255,255,255,0.1);
+    color: var(--text-main);
+}
