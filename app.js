@@ -98,14 +98,16 @@ function getVolumeMultiplier() {
 }
 
 let audioCtx        = null;
+let destNode        = null; // MediaStream 브릿지 전용 노드
+let breathGainNode  = null; // 호흡 가이드 전용 마스터 게인
 let sleepGainNode    = null;
 let sleepSourceNodes     = [];
 let sleepTimerIv         = null;
 let noiseLoopControllers = [];
+let scheduledAudioNodes  = []; // 스케줄된 오실레이터 추적용
 
 // ── 백그라운드 재생 보조 ──
-let silentAudio = null;
-let silentBlobUrl = null;
+let masterAudio = null; // 오디오 스트림 재생용
 let wakeLock    = null;
 
 // ════════════════════════════════════════════════
@@ -119,11 +121,22 @@ const $ = (id) => document.getElementById(id);
 function ensureAudioCtx() {
     if (!audioCtx || audioCtx.state === 'closed') {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        destNode = audioCtx.createMediaStreamDestination();
+        breathGainNode = audioCtx.createGain();
+        breathGainNode.connect(destNode || audioCtx.destination);
     }
     if (audioCtx.state === 'suspended') {
         audioCtx.resume();
     }
     return audioCtx;
+}
+
+function clearScheduledAudio() {
+    scheduledAudioNodes.forEach(node => {
+        try { node.stop(); } catch(e) {}
+        try { node.disconnect(); } catch(e) {}
+    });
+    scheduledAudioNodes = [];
 }
 
 // ════════════════════════════════════════════════
@@ -133,59 +146,60 @@ function ensureAudioCtx() {
 //  ─ Wake Lock API로 화면 꺼짐도 방지 (지원 시)
 // ════════════════════════════════════════════════
 
-function createSilentWAV() {
-    const sr = 22050, dur = 1, ch = 1, bps = 16;
-    const len = sr * dur;
-    const data = len * ch * (bps / 8);
-    const size = 44 + data;
-    const buf = new ArrayBuffer(size);
-    const dv = new DataView(buf);
-    const ws = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
-    ws(0, 'RIFF');
-    dv.setUint32(4, size - 8, true);
-    ws(8, 'WAVE');
-    ws(12, 'fmt ');
-    dv.setUint32(16, 16, true);
-    dv.setUint16(20, 1, true);
-    dv.setUint16(22, ch, true);
-    dv.setUint32(24, sr, true);
-    dv.setUint32(28, sr * ch * (bps / 8), true);
-    dv.setUint16(32, ch * (bps / 8), true);
-    dv.setUint16(34, bps, true);
-    ws(36, 'data');
-    dv.setUint32(40, data, true);
-    // 모든 샘플 0 (무음) — ArrayBuffer는 기본 0이므로 추가 작업 불필요
-    return new Blob([buf], { type: 'audio/wav' });
-}
-
-function startBackgroundKeepAlive() {
-    // 무음 오디오 재생으로 미디어 세션 유지
-    if (!silentAudio) {
-        const blob = createSilentWAV();
-        silentBlobUrl = URL.createObjectURL(blob);
-        silentAudio = new Audio(silentBlobUrl);
-        silentAudio.loop = true;
-        silentAudio.volume = 0.01; // 거의 무음
+function setupMasterAudioStream() {
+    if (!masterAudio) {
+        masterAudio = document.createElement('audio');
+        masterAudio.setAttribute('playsinline', '');
+        masterAudio.setAttribute('webkit-playsinline', '');
+        masterAudio.volume = 1.0;
+        document.body.appendChild(masterAudio);
     }
-    silentAudio.play().catch(() => {});
+    
+    // AudioContext의 라이브 스트림을 <audio>의 소스로 연결 (브릿징)
+    if (audioCtx && destNode && masterAudio.srcObject !== destNode.stream) {
+        masterAudio.srcObject = destNode.stream;
+    }
+    
+    masterAudio.play().catch(() => {});
 
-    // Wake Lock API (지원하는 브라우저에서만)
-    if ('wakeLock' in navigator) {
+    // Media Session API 즉시 등록
+    if ('mediaSession' in navigator) {
+        const config = BEAT_TYPES[state.selectedBeat] || BEAT_TYPES['delta3'];
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: 'Deep Sleep', 
+            artist: config.name + ' (재생 중)'
+        });
+        
+        navigator.mediaSession.setActionHandler('play', () => {
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            if (masterAudio) masterAudio.play().catch(()=>{});
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+            stopAll();
+        });
+    }
+
+    // Wake Lock API
+    if ('wakeLock' in navigator && !wakeLock) {
         navigator.wakeLock.request('screen')
             .then(lock => { wakeLock = lock; })
             .catch(() => {});
     }
 }
 
-function stopBackgroundKeepAlive() {
-    if (silentAudio) {
-        silentAudio.pause();
-        silentAudio.src = '';
-        silentAudio = null;
+function cleanupMasterAudio() {
+    if (masterAudio) {
+        masterAudio.pause();
+        masterAudio.srcObject = null;
+        if (masterAudio.parentNode) {
+            masterAudio.parentNode.removeChild(masterAudio);
+        }
+        masterAudio = null;
     }
-    if (silentBlobUrl) {
-        URL.revokeObjectURL(silentBlobUrl);
-        silentBlobUrl = null;
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
     }
     if (wakeLock) {
         wakeLock.release().catch(() => {});
@@ -500,9 +514,9 @@ function generateWAV(beatKey, customDuration) {
 //  Web Audio API — 틱 & 차임
 // ════════════════════════════════════════════════
 
-function playTick() {
+function playTick(time) {
     if (!audioCtx || audioCtx.state !== 'running') return;
-    const t = audioCtx.currentTime;
+    const t = time !== undefined ? time : audioCtx.currentTime;
     const osc  = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'sine';
@@ -511,14 +525,15 @@ function playTick() {
     gain.gain.setValueAtTime(0, t);
     gain.gain.linearRampToValueAtTime(TICK.volume, t + 0.003);
     gain.gain.exponentialRampToValueAtTime(0.001, t + TICK.decay);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(breathGainNode || destNode || audioCtx.destination);
     osc.start(t);
     osc.stop(t + TICK.decay);
+    scheduledAudioNodes.push(osc);
 }
 
-function playChime(phase) {
+function playChime(phase, time) {
     if (!audioCtx || audioCtx.state !== 'running') return;
-    const t = audioCtx.currentTime;
+    const t = time !== undefined ? time : audioCtx.currentTime;
     (CHIME.freqs[phase] || [440]).forEach((freq) => {
         const osc  = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
@@ -528,9 +543,10 @@ function playChime(phase) {
         gain.gain.linearRampToValueAtTime(CHIME.volume, t + 0.04);
         gain.gain.setValueAtTime(CHIME.volume, t + 0.15);
         gain.gain.exponentialRampToValueAtTime(0.001, t + CHIME.decay);
-        osc.connect(gain).connect(audioCtx.destination);
+        osc.connect(gain).connect(breathGainNode || destNode || audioCtx.destination);
         osc.start(t);
         osc.stop(t + CHIME.decay);
+        scheduledAudioNodes.push(osc);
     });
 }
 
@@ -548,7 +564,7 @@ async function createAndPlayBeat() {
     // 마스터 게인 노드 (전체 수면 사운드 볼륨 제어)
     sleepGainNode = ctx.createGain();
     sleepGainNode.gain.value = BEAT.breathVolume * getVolumeMultiplier();
-    sleepGainNode.connect(ctx.destination);
+    sleepGainNode.connect(destNode || ctx.destination);
 
     if (config.type === 'binaural') {
         // ── 바이노럴 비트: 좌/우 개별 오실레이터 ──
@@ -598,9 +614,6 @@ async function createAndPlayBeat() {
             noiseLoopControllers.push(noiseCtrl);
         }
     }
-
-    // 백그라운드 재생 보조 시작
-    startBackgroundKeepAlive();
 }
 
 function checkSleepTime() {
@@ -631,109 +644,124 @@ function checkSleepTime() {
 //  호흡 가이드
 // ════════════════════════════════════════════════
 
-/** 준비 카운트다운 (5초) → 호흡 시작 */
+/** 준비 및 호흡 스케줄링 (웹 오디오 API 기준 사전 예약) */
 function startBreathing() {
     state.phase = 'breathing';
     state.cycle = 0;
     switchView('breathing');
+    clearScheduledAudio();
 
-    // ── 준비 단계 ──
-    $('cycle-label').textContent = '준비';
-    $('breath-label').textContent = '준비하세요';
-    $('countdown').textContent = '';
+    if (breathGainNode) {
+        breathGainNode.gain.value = getVolumeMultiplier();
+    }
 
-    const orb = $('breath-orb');
-    orb.className = 'breath-orb';
-    orb.style.transition = 'all 1s ease';
+    const t0 = audioCtx.currentTime;
+    const prepSec = 5;
+    const cycleSec = BREATHING.inhale + BREATHING.hold + BREATHING.exhale;
+    const totalBreathingSec = prepSec + (state.selectedCycles * cycleSec);
 
-    const prepMessages = [
-        { time: 0, msg: '준비하세요' },
-        { time: 3, msg: '코로 호흡' },
-        { time: 5, msg: null },  // 시작
-    ];
+    // ── 1. 오디오 완벽 스케줄링 (화면 꺼짐 완벽 대비) ──
+    let t = t0;
+    
+    // 준비 틱
+    for (let i = 1; i <= 4; i++) playTick(t + i);
+    t += prepSec;
 
-    let elapsed = 0;
-    const prepCountdown = () => {
-        if (state.phase !== 'breathing') return;
+    for (let c = 0; c < state.selectedCycles; c++) {
+        playChime('inhale', t);
+        for(let i=1; i<BREATHING.inhale; i++) playTick(t + i);
+        t += BREATHING.inhale;
 
-        const remaining = 5 - elapsed;
-        if (remaining > 0) {
-            $('countdown').textContent = remaining;
-            playTick();
-        }
+        playChime('hold', t);
+        for(let i=1; i<BREATHING.hold; i++) playTick(t + i);
+        t += BREATHING.hold;
 
-        // 메시지 업데이트
-        const nextMsg = prepMessages.find(m => m.time === elapsed);
-        if (nextMsg && nextMsg.msg) {
-            $('breath-label').textContent = nextMsg.msg;
-        }
+        playChime('exhale', t);
+        for(let i=1; i<BREATHING.exhale; i++) playTick(t + i);
+        t += BREATHING.exhale;
+    }
 
-        elapsed++;
+    // 수면 사운드 볼륨 서서히 증가 예약
+    if (sleepGainNode) {
+        sleepGainNode.gain.cancelScheduledValues(t0);
+        sleepGainNode.gain.setValueAtTime(BEAT.breathVolume * getVolumeMultiplier(), t);
+        sleepGainNode.gain.linearRampToValueAtTime(BEAT.sleepVolume * getVolumeMultiplier(), t + 2);
+    }
 
-        if (elapsed <= 5) {
-            state.breathTimeout = setTimeout(prepCountdown, 1000);
-        } else {
-            // 준비 완료 → 첫 사이클 시작
-            nextCycle();
-        }
-    };
-
-    // 첫 메시지는 즉시, 카운트다운은 1초 후 시작
-    state.breathTimeout = setTimeout(prepCountdown, 1000);
-}
-
-function nextCycle() {
-    if (state.phase !== 'breathing') return;
-    state.cycle++;
-    if (state.cycle > state.selectedCycles) { transitionToSleepBeat(); return; }
-
-    $('cycle-label').textContent = `${state.cycle} / ${state.selectedCycles} 사이클`;
-    doPhase('inhale', BREATHING.inhale, () => {
-        doPhase('hold', BREATHING.hold, () => {
-            doPhase('exhale', BREATHING.exhale, nextCycle);
-        });
-    });
-}
-
-function doPhase(name, seconds, onDone) {
-    if (state.phase !== 'breathing') return;
-
-    playChime(name);
-
-    const labels = { inhale: '들이마시기', hold: '참기', exhale: '내쉬기' };
-    $('breath-label').textContent = labels[name];
-
-    const orb = $('breath-orb');
-    orb.style.transition =
-        `transform ${seconds}s ease-in-out, ` +
-        'background 0.6s ease, border-color 0.6s ease, box-shadow 0.8s ease';
-    orb.className = `breath-orb ${name}`;
-
-    let left = seconds;
-    $('countdown').textContent = left;
-
+    // ── 2. UI 동기화 루프 (audioCtx 시간에 의존하여 화면 꺼짐 무시) ──
     clearInterval(state.breathInterval);
     state.breathInterval = setInterval(() => {
-        left--;
-        if (left > 0) {
-            $('countdown').textContent = left;
-            playTick();
-        } else if (left === 0) {
-            $('countdown').textContent = '';
+        if (state.phase !== 'breathing') {
+            clearInterval(state.breathInterval);
+            return;
         }
-    }, 1000);
 
-    clearTimeout(state.breathTimeout);
-    state.breathTimeout = setTimeout(() => {
-        clearInterval(state.breathInterval);
-        onDone();
-    }, seconds * 1000);
+        const elapsed = audioCtx.currentTime - t0;
+
+        if (elapsed >= totalBreathingSec) {
+            clearInterval(state.breathInterval);
+            transitionToSleepBeat(true);
+            return;
+        }
+
+        if (elapsed < prepSec) {
+            $('cycle-label').textContent = '준비';
+            const left = Math.ceil(prepSec - elapsed);
+            $('countdown').textContent = left > 0 ? left : '';
+            $('breath-label').textContent = elapsed < 3 ? '준비하세요' : '코로 호흡';
+
+            const orb = $('breath-orb');
+            if (orb.className !== 'breath-orb') {
+                orb.className = 'breath-orb';
+                orb.style.transition = 'all 1s ease';
+            }
+        } else {
+            const cycleElapsed = elapsed - prepSec;
+            const currentCycle = Math.floor(cycleElapsed / cycleSec) + 1;
+            const secInCycle = cycleElapsed % cycleSec;
+
+            $('cycle-label').textContent = `${currentCycle} / ${state.selectedCycles} 사이클`;
+
+            let phaseName = '';
+            let phaseLeft = 0;
+            let phaseDuration = 0;
+            let label = '';
+
+            if (secInCycle < BREATHING.inhale) {
+                phaseName = 'inhale';
+                phaseLeft = Math.ceil(BREATHING.inhale - secInCycle);
+                phaseDuration = BREATHING.inhale;
+                label = '들이마시기';
+            } else if (secInCycle < BREATHING.inhale + BREATHING.hold) {
+                phaseName = 'hold';
+                phaseLeft = Math.ceil((BREATHING.inhale + BREATHING.hold) - secInCycle);
+                phaseDuration = BREATHING.hold;
+                label = '참기';
+            } else {
+                phaseName = 'exhale';
+                phaseLeft = Math.ceil(cycleSec - secInCycle);
+                phaseDuration = BREATHING.exhale;
+                label = '내쉬기';
+            }
+
+            $('countdown').textContent = phaseLeft > 0 ? phaseLeft : '';
+            $('breath-label').textContent = label;
+
+            const orb = $('breath-orb');
+            if (!orb.classList.contains(phaseName)) {
+                orb.className = `breath-orb ${phaseName}`;
+                orb.style.transition = 
+                    `transform ${phaseDuration}s ease-in-out, ` +
+                    'background 0.6s ease, border-color 0.6s ease, box-shadow 0.8s ease';
+            }
+        }
+    }, 200);
 }
 
 // ════════════════════════════════════════════════
 //  수면 사운드 전환
 // ════════════════════════════════════════════════
-function transitionToSleepBeat() {
+function transitionToSleepBeat(skipVolumeRamp = false) {
     state.phase = 'sleepbeat';
     state.sleepStart = Date.now();
 
@@ -742,8 +770,8 @@ function transitionToSleepBeat() {
     const config = BEAT_TYPES[state.selectedBeat];
     $('sleep-beat-name').textContent = `${config.name} · ${config.desc}`;
 
-    // GainNode로 부드러운 볼륨 전환 (2초)
-    if (sleepGainNode && audioCtx) {
+    // GainNode로 부드러운 볼륨 전환 (사전 예약된 경우 생략)
+    if (!skipVolumeRamp && sleepGainNode && audioCtx) {
         const t = audioCtx.currentTime;
         sleepGainNode.gain.cancelScheduledValues(t);
         sleepGainNode.gain.setValueAtTime(sleepGainNode.gain.value, t);
@@ -755,6 +783,7 @@ function transitionToSleepBeat() {
     // 30분 자동종료 타이머
     sleepTimerIv = setInterval(checkSleepTime, 1000);
 
+    // Media Session 업데이트
     if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
             title: 'Deep Sleep', artist: config.name + ' 재생 중',
@@ -787,7 +816,11 @@ function updateRemaining() {
 // ════════════════════════════════════════════════
 async function startApp() {
     stopPreview();              // 미리듣기 정리
-    await createAndPlayBeat();  // audioCtx + 수면 사운드 생성 (worklet 등록 대기)
+    
+    ensureAudioCtx();           // AudioContext 및 destNode 동기적 생성
+    setupMasterAudioStream();   // 모바일 백그라운드 재생용 브릿지 설정
+
+    await createAndPlayBeat();  // 수면 사운드 생성 (worklet 등록 대기)
     startBreathing();           // 틱/차임도 같은 audioCtx 사용
 }
 
@@ -820,6 +853,8 @@ function fadeOutAndClean() {
 }
 
 function cleanAudio() {
+    clearScheduledAudio();
+
     // 소스 노드 정리
     sleepSourceNodes.forEach((node) => {
         try { node.stop(); } catch(e) {}
@@ -847,7 +882,7 @@ function cleanAudio() {
     }
 
     // 백그라운드 보조 정리
-    stopBackgroundKeepAlive();
+    cleanupMasterAudio();
 
     switchView('idle');
     resetBreathUI();
@@ -918,10 +953,16 @@ function scheduleGainUpdate() {
     if (_volumeRafId) return;
     _volumeRafId = requestAnimationFrame(() => {
         _volumeRafId = null;
-        if (sleepGainNode && audioCtx && audioCtx.state === 'running') {
-            const targetVol = (state.phase === 'breathing') ? BEAT.breathVolume : BEAT.sleepVolume;
-            const newVal = targetVol * getVolumeMultiplier();
-            sleepGainNode.gain.setValueAtTime(newVal, audioCtx.currentTime);
+        if (audioCtx && audioCtx.state === 'running') {
+            const volMulti = getVolumeMultiplier();
+            const t = audioCtx.currentTime;
+            if (sleepGainNode) {
+                const targetVol = (state.phase === 'breathing') ? BEAT.breathVolume : BEAT.sleepVolume;
+                sleepGainNode.gain.setValueAtTime(targetVol * volMulti, t);
+            }
+            if (breathGainNode) {
+                breathGainNode.gain.setValueAtTime(1.0 * volMulti, t);
+            }
         }
     });
 }
